@@ -1,11 +1,6 @@
 """
-My AI Assistant for ERPNext
-v2.0.0 - Clean Architecture
+Backward compatibility - api package re-export
 """
-
-__version__ = "2.0.0"
-
-# Re-export API for backward compatibility
 from my_ai_assistant.my_ai_assistant.api.ai_helper import test_connection, ask_ai, scan_bill_image
 
 __all__ = ["test_connection", "ask_ai", "scan_bill_image"]

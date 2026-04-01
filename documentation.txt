@@ -1,0 +1,594 @@
+================================================================================
+                      MY AI ASSISTANT - DOCUMENTATION
+                           Version 2.0.0 | ERPNext AI Module
+================================================================================
+
+TABLE OF CONTENTS
+-----------------
+1. Project Overview
+2. File Structure & Architecture
+3. Module Descriptions
+4. API Endpoints
+5. Configuration Guide
+6. Data Flow Architecture
+7. Usage Examples
+8. Supported Doctypes
+9. Query Patterns
+10. Response Formats
+
+================================================================================
+1. PROJECT OVERVIEW
+================================================================================
+
+My AI Assistant is a Frappe/ERPNext module that provides an AI-powered chatbot
+interface for querying and managing ERP data using natural language.
+
+Key Features:
+- Natural language queries ("How many customers?", "Show invoices")
+- Document ID detection (SINV-*, PINV-*, PO-*, PUR-ORD-*, etc.)
+- Entity recognition (Customer, Supplier, Item names)
+- Context-aware follow-up questions
+- OCR bill scanning and invoice creation
+- Auto-creation of missing items/suppliers/customers
+- Real-time ERP data fetching
+
+Version: 2.0.0
+Framework: Frappe v16+ | ERPNext v16+
+AI Provider: Google Gemini API
+
+================================================================================
+2. FILE STRUCTURE & ARCHITECTURE
+================================================================================
+
+my_ai_assistant/
+├── my_ai_assistant/                    # Main module directory
+│   ├── __init__.py                     # Module init
+│   ├── hooks.py                        # Frappe app hooks
+│   ├── modules.txt                     # Module list
+│   │
+│   ├── api/                            # API Endpoints
+│   │   ├── __init__.py
+│   │   ├── ai_helper.py               # Main AI API functions
+│   │   ├── data_fetcher.py            # Live ERP data fetching
+│   │   └── document_processor.py      # Document creation (AI/OCR)
+│   │
+│   ├── config/                         # Configuration
+│   │   ├── __init__.py
+│   │   └── data_registry.py           # Doctype registry & keywords
+│   │
+│   ├── utils/                          # Utilities
+│   │   ├── __init__.py
+│   │   └── safe_db.py                 # Safe database wrappers
+│   │
+│   ├── public/                         # Static Assets
+│   │   ├── __init__.py
+│   │   ├── js/ai_chat.js              # Chat widget frontend
+│   │   └── css/ai_chat.css            # Chat widget styles
+│   │
+│   ├── page/ai_chat/                   # Full-page chat interface
+│   │   ├── ai_chat.js                 # Page controller
+│   │   └── ai_chat.json               # Page definition
+│   │
+│   └── my_ai_assistant/                # Nested module (v2.0.0)
+│       ├── __init__.py
+│       ├── api/                        # API re-exports
+│       ├── config/                     # Config re-exports
+│       └── public/                     # Asset re-exports
+│
+├── api/                                # Backward compatibility
+│   ├── __init__.py
+│   └── ai_helper.py                   # Re-exports
+│
+├── ai_helper.py                       # Backward compatibility
+├── __init__.py                        # Root init
+├── README.md                          # Basic documentation
+├── hooks.py                           # Root hooks
+└── pyproject.toml                     # Dependencies
+
+================================================================================
+3. MODULE DESCRIPTIONS
+================================================================================
+
+3.1 API LAYER (api/)
+--------------------------------------------------------------------------------
+
+ai_helper.py
+--------------
+Main API endpoints for AI functionality.
+
+Functions:
+- test_connection()          → Test Gemini API connectivity
+- ask_ai()                  → Main AI query handler
+- scan_bill_image()         → OCR bill scanning & invoice creation
+- build_system_prompt()      → Generate AI system instructions
+- trim_live_data()          → Limit data size for AI context
+- call_gemini()             → Gemini API wrapper
+- parse_ai_response()       → Parse AI JSON responses
+- extract_context_from_history() → Extract topics from conversation
+- expand_vague_question()   → Expand vague follow-up queries
+
+data_fetcher.py
+---------------
+Fetches live ERP data based on natural language queries.
+
+Functions:
+- get_live_data()           → Main data fetcher
+- detect_doc_id()          → Detect document IDs (SINV-*, PINV-*, etc.)
+- extract_entities()       → Extract entity names (Customer, Item, etc.)
+- fetch_entity_related()   → Fetch related documents
+- get_overview_counts()    → Get counts of all doctypes
+- get_sales_invoice_summary() → Sales metrics
+- get_purchase_invoice_summary() → Purchase metrics
+- get_business_summary()   → Complete business overview
+
+Patterns Supported:
+- Sales Invoice: SINV-*, ACC-SINV-*, SI-*
+- Purchase Invoice: PINV-*, PI-*
+- Sales Order: SO-*, SAL-ORD-*
+- Purchase Order: PO-*, PUR-ORD-*, PUR-*
+- Quotation: QTN-*, QUOT-*, QUOTE-*
+- Delivery Note: DN-*, DEL-*
+- Journal Entry: JV-*, JE-*, JOUR-*
+- Employee: HR-EMP-*, EMP-*
+- Attendance: HR-ATT-*, ATT-*
+- Customer: CUST-*
+- Supplier: SUP-*, SUPP-*, VEND-*
+
+document_processor.py
+---------------------
+Creates documents from AI-parsed or OCR data.
+
+Functions:
+- create_from_ai()         → Route to appropriate creator
+- create_customer()        → Create Customer
+- create_supplier()        → Create Supplier
+- create_item()            → Create Item
+- create_lead()            → Create Lead
+- create_sales_invoice()   → Create Sales Invoice from AI
+- create_purchase_invoice() → Create Purchase Invoice from AI
+- create_sales_order()     → Create Sales Order from AI
+- create_purchase_order()  → Create Purchase Order from AI
+- create_quotation()       → Create Quotation from AI
+- create_payment_entry()   → Create Payment Entry from AI
+- create_sales_invoice_from_ocr() → OCR → Sales Invoice
+- create_purchase_invoice_from_ocr() → OCR → Purchase Invoice
+- create_invoice_from_extracted() → Generic OCR handler
+- get_or_create_item()     → Get or auto-create items
+- get_or_create_customer() → Get or auto-create customers
+- get_or_create_supplier() → Get or auto-create suppliers
+- get_tax_account()        → Get tax account for invoices
+
+3.2 CONFIGURATION (config/data_registry.py)
+--------------------------------------------------------------------------------
+
+REGISTRY Dictionary:
+- Defines all supported doctypes
+- Keywords for natural language matching
+- Fetch fields for each doctype
+- Related doctypes mappings
+- Creation defaults
+
+Helper Functions:
+- get_all_doctypes()       → List all registered doctypes
+- get_config()             → Get config for specific doctype
+- get_keywords_map()       → Get keyword → doctype mapping
+- get_entity_doctypes()    → Get doctypes with related data
+- get_create_config()    → Get creation configuration
+- search_doctype_by_keyword() → Find doctype by keyword
+
+3.3 UTILITIES (utils/safe_db.py)
+--------------------------------------------------------------------------------
+
+Safe database access wrappers with error handling.
+
+Functions:
+- safe_get_all()           → Safe frappe.get_all()
+- safe_get_doc()           → Safe frappe.get_doc()
+- safe_sql()               → Safe frappe.db.sql()
+- db_count()               → Safe document counting
+
+3.4 FRONTEND (public/js/ai_chat.js)
+--------------------------------------------------------------------------------
+
+Chat widget implementation.
+
+Class: AIChatWidget
+Methods:
+- init()                   → Initialize widget
+- inject()                 → Inject HTML/CSS
+- bindEvents()             → Event listeners
+- toggle()                 → Show/hide widget
+- askAI()                  → Send query to backend
+- appendUserMsg()         → Add user message
+- appendAIMsg()           → Add AI message with rendering
+- renderResponse()         → Format AI response (text/list/success/error/info)
+- uploadBillImage()       → Handle bill OCR upload
+- escapeHtml()            → HTML escaping
+- getTime()               → Format timestamp
+- scrollToBottom()        → Auto-scroll
+
+Response Types Handled:
+- text: Plain text with optional link
+- list: Item list with links and "View All" button
+- success: Success message with open link
+- error: Error message
+- info: Info message with view link
+
+================================================================================
+4. API ENDPOINTS
+================================================================================
+
+4.1 test_connection
+--------------------------------------------------------------------------------
+Method: GET/POST
+Path: my_ai_assistant.api.ai_helper.test_connection
+
+Returns:
+{
+    "success": true/false,
+    "message": "status message"
+}
+
+4.2 ask_ai
+--------------------------------------------------------------------------------
+Method: POST
+Path: my_ai_assistant.api.ai_helper.ask_ai
+
+Parameters:
+- question (string)              → User's natural language query
+- doctype (string, optional)     → Specific doctype hint
+- conversation_history (string)  → JSON array of previous messages
+
+Returns (various formats):
+
+Text Response:
+{
+    "type": "text",
+    "message": "HTML formatted answer",
+    "link": "/app/doctype/id" (optional),
+    "doctype": "Doctype Name" (optional),
+    "name": "DOC-001" (optional)
+}
+
+List Response:
+{
+    "type": "list",
+    "message": "Header text",
+    "items": ["ITEM-001", "ITEM-002"],
+    "doctype": "Doctype Name",
+    "link": "/app/doctype"
+}
+
+Create Response:
+{
+    "type": "success",
+    "message": "Creation message",
+    "link": "/app/doctype/id",
+    "doctype": "Doctype Name",
+    "name": "DOC-001"
+}
+
+Error Response:
+{
+    "type": "error",
+    "message": "Error description"
+}
+
+4.3 scan_bill_image
+--------------------------------------------------------------------------------
+Method: POST
+Path: my_ai_assistant.api.ai_helper.scan_bill_image
+
+Parameters:
+- image_data (string)      → Base64 encoded image
+- invoice_type (string)    → "sales", "purchase", or "auto"
+
+Returns:
+{
+    "type": "success/error",
+    "message": "Result message",
+    "link": "/app/invoice/id" (on success),
+    "doctype": "Sales Invoice/Purchase Invoice",
+    "name": "INV-001",
+    "auto_created_items": ["ITEM-001"] (optional)
+}
+
+================================================================================
+5. CONFIGURATION GUIDE
+================================================================================
+
+5.1 API Key Setup
+--------------------------------------------------------------------------------
+Add to site_config.json:
+
+{
+    "gemini_api_key": "your-gemini-api-key-here"
+}
+
+Or set environment variable:
+export GEMINI_API_KEY="your-key"
+
+5.2 Module Installation
+--------------------------------------------------------------------------------
+1. Copy module to frappe-bench/apps/
+2. bench --site [site-name] install-app my_ai_assistant
+3. bench build --app my_ai_assistant
+4. bench restart
+
+5.3 Hooks Configuration (hooks.py)
+--------------------------------------------------------------------------------
+- app_include_js: Chat widget JS path
+- app_include_css: Chat widget CSS path
+- page routes: Full-page chat interface
+
+================================================================================
+6. DATA FLOW ARCHITECTURE
+================================================================================
+
+6.1 Query Processing Flow
+--------------------------------------------------------------------------------
+
+User Input
+    ↓
+ask_ai()
+    ↓
+├─ Greeting/Help Check
+├─ Context Extraction (from history)
+├─ Vague Query Expansion
+└─ get_live_data()
+        ↓
+        ├─ detect_doc_id() → Fetch specific document
+        ├─ extract_entities() → Fetch entity data
+        ├─ keyword matching → Fetch doctype lists
+        ├─ computed summaries → Business metrics
+        └─ child table fetch → Items data
+    ↓
+Build System Prompt + User Message
+    ↓
+Gemini AI API Call
+    ↓
+Parse AI Response
+    ↓
+Post-Processing
+    ├─ Add missing links
+    ├─ Convert text→list (if list query)
+    └─ Enhance with document links
+    ↓
+Return to Frontend
+
+6.2 Document Creation Flow (OCR)
+--------------------------------------------------------------------------------
+
+Bill Image Upload
+    ↓
+scan_bill_image()
+    ↓
+Parse Image (Base64)
+    ↓
+Gemini Vision OCR
+    ↓
+Extract Structured Data
+    ├─ Party name
+    ├─ Invoice number
+    ├─ Dates
+    ├─ Items
+    ├─ Taxes
+    └─ Totals
+    ↓
+create_invoice_from_extracted()
+    ↓
+get_or_create_customer/supplier()
+    ↓
+get_or_create_item() (for each item)
+    ↓
+Create Invoice Document
+    ↓
+Return Success + Link
+
+================================================================================
+7. USAGE EXAMPLES
+================================================================================
+
+7.1 Server-Side (Python)
+--------------------------------------------------------------------------------
+
+# Test connection
+result = frappe.call(
+    "my_ai_assistant.api.ai_helper.test_connection"
+)
+
+# Simple query
+response = frappe.call(
+    "my_ai_assistant.api.ai_helper.ask_ai",
+    question="how many customers"
+)
+
+# Query with conversation history
+history = json.dumps([
+    {"role": "user", "content": "show customers"},
+    {"role": "assistant", "content": "..."}
+])
+response = frappe.call(
+    "my_ai_assistant.api.ai_helper.ask_ai",
+    question="how many of them are active",
+    conversation_history=history
+)
+
+# OCR bill scan
+with open("bill.jpg", "rb") as f:
+    image_data = f"data:image/jpeg;base64,{base64.b64encode(f.read()).decode()}"
+
+response = frappe.call(
+    "my_ai_assistant.api.ai_helper.scan_bill_image",
+    image_data=image_data,
+    invoice_type="sales"
+)
+
+7.2 Client-Side (JavaScript)
+--------------------------------------------------------------------------------
+
+// Simple query
+frappe.call({
+    method: 'my_ai_assistant.api.ai_helper.ask_ai',
+    args: {
+        question: 'how many customers',
+        conversation_history: JSON.stringify([])
+    },
+    callback: function(r) {
+        if (r.message) {
+            console.log(r.message);
+        }
+    }
+});
+
+// Upload bill
+frappe.call({
+    method: 'my_ai_assistant.api.ai_helper.scan_bill_image',
+    args: {
+        image_data: base64ImageData,
+        invoice_type: 'auto'
+    },
+    callback: function(r) {
+        if (r.message.type === 'success') {
+            frappe.show_alert(r.message.message);
+        }
+    }
+});
+
+7.3 CLI Commands
+--------------------------------------------------------------------------------
+
+# Test connection
+bench execute my_ai_assistant.api.ai_helper.test_connection
+
+# Direct query
+bench execute my_ai_assistant.api.ai_helper.ask_ai --kwargs '{"question":"how many customers"}'
+
+================================================================================
+8. SUPPORTED DOCTYPES
+================================================================================
+
+8.1 Master Data
+--------------------------------------------------------------------------------
+- Customer
+- Supplier
+- Item
+- Employee
+- Lead
+
+8.2 Sales & Purchase
+--------------------------------------------------------------------------------
+- Sales Invoice
+- Purchase Invoice
+- Sales Order
+- Purchase Order
+- Quotation
+- Delivery Note
+
+8.3 Financial
+--------------------------------------------------------------------------------
+- Payment Entry
+- Journal Entry
+
+8.4 HR & Projects
+--------------------------------------------------------------------------------
+- Attendance
+- Salary Slip
+- Leave Application
+- Project
+- Task
+
+================================================================================
+9. QUERY PATTERNS
+================================================================================
+
+9.1 Count Queries
+--------------------------------------------------------------------------------
+"how many customers"
+"total number of items"
+"count of suppliers"
+→ Returns: {type: "text", message: "You have <b>15 customers</b>."}
+
+9.2 List Queries
+--------------------------------------------------------------------------------
+"show all customers"
+"list quotations"
+"display items"
+→ Returns: {type: "list", items: [...], doctype: "Customer", link: "/app/customer"}
+
+9.3 Specific Document Queries
+--------------------------------------------------------------------------------
+"how many items in SINV-2024-00001"
+"amount of PUR-ORD-2026-00003"
+"details of ACC-SINV-2026-00005"
+→ Returns: {type: "text", message: "...", link: "/app/sales-invoice/SINV-2024-00001"}
+
+9.4 Entity Queries
+--------------------------------------------------------------------------------
+"invoices of ABC Ltd"
+"purchase orders from XYZ Supplier"
+"stock of Laptop"
+→ Returns: Related documents for the entity
+
+9.5 Summary Queries
+--------------------------------------------------------------------------------
+"business summary"
+"total revenue this month"
+"overdue invoices"
+→ Returns: Computed business metrics
+
+9.6 Creation Queries
+--------------------------------------------------------------------------------
+"create customer ABC Ltd"
+"add new supplier XYZ"
+"create invoice for John"
+→ Returns: {type: "success", link: "/app/customer/CUST-001"}
+
+9.7 Follow-up Queries
+--------------------------------------------------------------------------------
+"what about suppliers?"
+"show me those"
+"how many?"
+→ Context-aware responses based on conversation history
+
+================================================================================
+10. RESPONSE FORMATS
+================================================================================
+
+10.1 Frontend Rendering
+--------------------------------------------------------------------------------
+
+Text Type:
+<div>Plain text with <b>bold</b> formatting</div>
+[+ optional link button]
+
+List Type:
+<div>Header message</div>
+<div class="list-box">
+    <div><a href="/app/doctype/item">→ ITEM-001</a></div>
+    <div><a href="/app/doctype/item">→ ITEM-002</a></div>
+</div>
+[+ View All button]
+
+Success Type:
+<div style="color: green;">✅ Success message</div>
+<a href="/app/doctype/id">🔗 Open Doctype</a>
+
+Error Type:
+<div style="color: red;">❌ Error message</div>
+
+Info Type:
+<div style="color: orange;">⚠️ Info message</div>
+[+ optional View Record link]
+
+10.2 Link Format
+--------------------------------------------------------------------------------
+All links use lowercase with dashes:
+- /app/customer/CUST-001
+- /app/sales-invoice/SINV-001
+- /app/purchase-order/PO-001
+- /app/quotation
+
+================================================================================
+                          END OF DOCUMENTATION
+================================================================================

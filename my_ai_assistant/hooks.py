@@ -7,8 +7,9 @@ app_description = "AI Assistant for ERPNext"
 app_email = "ai@gmail.com"
 app_license = "mit"
 
-app_include_css = "/assets/my_ai_assistant/css/ai_chat_widget.css"
-app_include_js = "/assets/my_ai_assistant/js/ai_chat_widget.js"
+# v2.0.0 - Updated paths
+app_include_css = "/assets/my_ai_assistant/css/ai_chat.css"
+app_include_js = "/assets/my_ai_assistant/js/ai_chat.js"
 
 fixtures = [
     {

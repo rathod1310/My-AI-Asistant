@@ -120,7 +120,7 @@ frappe.pages['ai-chat'].on_page_load = function(wrapper) {
         showTyping();
 
         frappe.call({
-            method: 'my_ai_assistant.ai_helper.ask_ai',
+            method: 'my_ai_assistant.api.ai_helper.ask_ai',
             args: { question: question, doctype: '' },
             callback: function(r) {
                 $('#typing-indicator').remove();
@@ -134,8 +134,10 @@ frappe.pages['ai-chat'].on_page_load = function(wrapper) {
                 if (typeof response === 'object' && response.message) {
                     html = response.message;
                     if (response.link) {
-                        var route = response.link.replace('/app/', '');
-                        html += '<div style="margin-top:10px;"><a href="' + response.link + '" onclick="frappe.set_route(\'' + route + '\');return false;" style="display:inline-block;padding:6px 14px;background:linear-gradient(135deg,#10B981,#059669);color:white;border-radius:8px;font-size:12px;text-decoration:none;font-weight:500;">🔗 Open ' + (response.doctype || 'Record') + ' →</a></div>';
+                        // Convert link like "/app/Customer/CUST-001" to route array
+                        var routeParts = response.link.replace('/app/', '').split('/').filter(function(p) { return p; });
+                        var routeArray = JSON.stringify(routeParts);
+                        html += '<div style="margin-top:10px;"><a href="' + response.link + '" onclick="frappe.set_route(' + routeArray + ');return false;" style="display:inline-block;padding:6px 14px;background:linear-gradient(135deg,#10B981,#059669);color:white;border-radius:8px;font-size:12px;text-decoration:none;font-weight:500;">🔗 Open ' + (response.doctype || 'Record') + ' →</a></div>';
                     }
                 } else {
                     html = String(response);
