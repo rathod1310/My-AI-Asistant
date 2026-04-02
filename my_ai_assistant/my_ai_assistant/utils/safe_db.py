@@ -45,6 +45,21 @@ def safe_get_all(doctype, fields=None, filters=None, limit=500, order_by="modifi
 
 
 @safe_db_call(default_return=None)
+def safe_get_all_with_error(doctype, fields=None, filters=None, limit=500, order_by="modified desc"):
+    """
+    Get records and return None on error (to distinguish from empty result).
+    """
+    return frappe.get_all(
+        doctype,
+        fields=fields or ["name"],
+        filters=filters or {},
+        limit=limit,
+        ignore_permissions=True,
+        order_by=order_by
+    )
+
+
+@safe_db_call(default_return=None)
 def safe_get_doc(doctype, doc_name):
     """
     Safely get full document with child tables.

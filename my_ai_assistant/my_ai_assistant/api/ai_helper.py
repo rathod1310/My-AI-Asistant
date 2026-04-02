@@ -343,6 +343,46 @@ Answer based ONLY on the live data above. If data is empty, say so clearly."""
                             "link": f"/app/{dt_name.lower().replace(' ', '-')}"
                         }
         
+        # Post-process: Handle count queries (how many) using overview data
+        count_keywords = ["how many", "count", "total", "number of"]
+        is_count_query = any(kw in question.lower() for kw in count_keywords)
+        
+        if is_count_query and parsed.get("type") == "text":
+            overview = live_data.get("overview", {})
+            count_map = {
+                "customer": ("Customer", "customers"),
+                "customers": ("Customer", "customers"),
+                "supplier": ("Supplier", "suppliers"),
+                "suppliers": ("Supplier", "suppliers"),
+                "vendor": ("Supplier", "suppliers"),
+                "vendors": ("Supplier", "suppliers"),
+                "item": ("Item", "items"),
+                "items": ("Item", "items"),
+                "product": ("Item", "items"),
+                "products": ("Item", "items"),
+                "employee": ("Employee", "employees"),
+                "employees": ("Employee", "employees"),
+                "staff": ("Employee", "employees"),
+                "invoice": ("Sales Invoice", "sales_invoices"),
+                "invoices": ("Sales Invoice", "sales_invoices"),
+            }
+            
+            q_lower = question.lower()
+            for kw, (dt_name, dt_key) in count_map.items():
+                if kw in q_lower:
+                    # Try to get count from overview first (most reliable)
+                    count = overview.get(dt_name, 0)
+                    
+                    # Fallback to list length if overview doesn't have it
+                    if not count and dt_key in live_data:
+                        count = len(live_data[dt_key])
+                    
+                    if count:
+                        return {
+                            "type": "text",
+                            "message": f"You have <b>{count} {dt_name.lower()}s</b>."
+                        }
+        
         # Post-process: Enhance text responses with computed links for specific documents
         if parsed.get("type") == "text" and not parsed.get("link"):
             # Check if response mentions a specific document ID

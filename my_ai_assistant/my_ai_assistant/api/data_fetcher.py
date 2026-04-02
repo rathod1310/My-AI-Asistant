@@ -8,7 +8,7 @@ import re
 from frappe.utils import today, get_first_day
 
 from ..config.data_registry import REGISTRY, get_keywords_map, get_config, get_entity_doctypes
-from ..utils.safe_db import safe_get_all, safe_get_doc, safe_sql, db_count
+from ..utils.safe_db import safe_get_all, safe_get_doc, safe_sql, db_count, safe_get_all_with_error
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -443,11 +443,28 @@ def get_live_data(question):
         if keyword in q and doctype not in fetched_doctypes:
             cfg = get_config(doctype)
             fields = cfg.get("fetch_fields", ["name"])
-            rows = safe_get_all(doctype, fields, limit=1000)
+            
+            # Try with configured fields - use with_error version to detect failures
+            rows = safe_get_all_with_error(doctype, fields, limit=1000)
+            
+            # If None returned, query failed - fallback to basic fields
+            if rows is None and doctype in ["Customer", "Supplier", "Item", "Employee"]:
+                frappe.logger().warning(f"my_ai_assistant: {doctype} query failed with fields {fields}, trying fallback")
+                rows = safe_get_all(doctype, ["name"], limit=1000)
+            elif rows is None:
+                # For other doctypes, use empty list
+                rows = []
+            
+            # Ensure rows is a list (not None)
+            rows = rows or []
+            
             key = doctype.lower().replace(" ", "_") + "s"
             data[key] = rows
             data[f"total_{key}"] = len(rows)
             fetched_doctypes.add(doctype)
+            
+            # Debug logging
+            frappe.logger().info(f"my_ai_assistant: Fetched {doctype} - {len(rows)} records for keyword '{keyword}'")
     
     # 5. Sales Invoice detailed data
     sinv_kw = ["invoice", "invoices", "revenue", "outstanding", "overdue", "paid",
