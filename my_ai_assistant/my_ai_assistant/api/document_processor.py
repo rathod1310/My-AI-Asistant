@@ -34,6 +34,8 @@ def create_from_ai(doctype, data):
             "Employee": create_employee,
             "Sales Order": create_sales_order,
             "Purchase Order": create_purchase_order,
+            "Sales Invoice": create_sales_invoice,
+            "Purchase Invoice": create_purchase_invoice,
         }
         
         creator = creators.get(doctype)
@@ -300,6 +302,217 @@ def create_purchase_order(data):
         return {"type": "error", "message": f"Failed to create purchase order: {str(e)[:100]}"}
 
 
+
+def create_sales_invoice(data):
+    """Create Sales Invoice from AI text command data."""
+    customer = data.get("customer") or data.get("customer_name")
+    if not customer:
+        return {"type": "error", "message": "Customer name required for Sales Invoice."}
+
+    if not frappe.db.exists("Customer", customer):
+        cust_result = create_customer({"customer_name": customer})
+        if cust_result["type"] == "error":
+            return cust_result
+        customer = cust_result.get("name") or customer
+
+    doc = frappe.new_doc("Sales Invoice")
+    doc.customer = customer
+    doc.posting_date = data.get("posting_date", frappe.utils.today())
+    doc.due_date = data.get("due_date", "")
+
+    items = data.get("items", [])
+    if not items:
+        items = [{"item_code": "Services", "qty": 1, "rate": data.get("grand_total", 0)}]
+
+    for item in items:
+        item_code = item.get("item_code") or item.get("item_name", "Services")
+        actual_code = get_or_create_item(item_code, item_code)
+        doc.append("items", {
+            "item_code": actual_code or item_code,
+            "item_name": item.get("item_name", item_code),
+            "description": item.get("description", item_code),
+            "qty": item.get("qty", 1),
+            "rate": item.get("rate", 0),
+            "uom": item.get("uom", "Nos"),
+        })
+
+    taxes = data.get("taxes", [])
+    for tax in taxes:
+        doc.append("taxes", {
+            "charge_type": "Actual",
+            "account_head": get_tax_account(tax.get("tax_type", "CGST")),
+            "description": tax.get("description", tax.get("tax_type", "Tax")),
+            "tax_amount": tax.get("amount", 0),
+        })
+
+    try:
+        doc.insert(ignore_permissions=True)
+        doc.save()
+        return {
+            "type": "success",
+            "message": f"✅ Sales Invoice '{doc.name}' created successfully!",
+            "link": f"/app/sales-invoice/{doc.name}",
+            "doctype": "Sales Invoice",
+            "name": doc.name,
+        }
+    except Exception as e:
+        return {"type": "error", "message": f"Failed to create Sales Invoice: {str(e)[:100]}"}
+
+
+def create_purchase_invoice(data):
+    """Create Purchase Invoice from AI text command data."""
+    supplier = data.get("supplier") or data.get("supplier_name")
+    if not supplier:
+        return {"type": "error", "message": "Supplier name required for Purchase Invoice."}
+
+    if not frappe.db.exists("Supplier", supplier):
+        supp_result = create_supplier({"supplier_name": supplier})
+        if supp_result["type"] == "error":
+            return supp_result
+        supplier = supp_result.get("name") or supplier
+
+    doc = frappe.new_doc("Purchase Invoice")
+    doc.supplier = supplier
+    doc.bill_no = data.get("bill_no", data.get("invoice_number", ""))
+    doc.posting_date = data.get("posting_date", frappe.utils.today())
+    doc.bill_date = data.get("posting_date", frappe.utils.today())
+    doc.due_date = data.get("due_date", "")
+
+    items = data.get("items", [])
+    if not items:
+        items = [{"item_code": "Services", "qty": 1, "rate": data.get("grand_total", 0)}]
+
+    for item in items:
+        item_code = item.get("item_code") or item.get("item_name", "Services")
+        actual_code = get_or_create_item(item_code, item_code)
+        doc.append("items", {
+            "item_code": actual_code or item_code,
+            "item_name": item.get("item_name", item_code),
+            "description": item.get("description", item_code),
+            "qty": item.get("qty", 1),
+            "rate": item.get("rate", 0),
+            "uom": item.get("uom", "Nos"),
+        })
+
+    taxes = data.get("taxes", [])
+    for tax in taxes:
+        doc.append("taxes", {
+            "charge_type": "Actual",
+            "account_head": get_tax_account(tax.get("tax_type", "CGST"), purchase=True),
+            "description": tax.get("description", tax.get("tax_type", "Tax")),
+            "tax_amount": tax.get("amount", 0),
+        })
+
+    try:
+        doc.insert(ignore_permissions=True)
+        doc.save()
+        return {
+            "type": "success",
+            "message": f"✅ Purchase Invoice '{doc.name}' created successfully!",
+            "link": f"/app/purchase-invoice/{doc.name}",
+            "doctype": "Purchase Invoice",
+            "name": doc.name,
+        }
+    except Exception as e:
+        return {"type": "error", "message": f"Failed to create Purchase Invoice: {str(e)[:100]}"}
+
+
+def create_sales_order_from_ocr(data, customer_name):
+    """Create Sales Order from OCR-extracted data."""
+    customer = get_or_create_customer(customer_name)
+
+    auto_created_items = []
+    doc = frappe.new_doc("Sales Order")
+    doc.customer = customer
+    doc.transaction_date = data.get("posting_date", frappe.utils.today())
+    doc.delivery_date = data.get("delivery_date", frappe.utils.today())
+
+    items = data.get("items", [])
+    for item_data in items:
+        item_name = item_data.get("item_name", "Item")
+        item_code = item_data.get("item_code") or item_name[:50]
+        actual_item_code = get_or_create_item(item_name, item_code)
+        if actual_item_code and actual_item_code not in auto_created_items:
+            auto_created_items.append(actual_item_code)
+
+        doc.append("items", {
+            "item_code": actual_item_code or item_code,
+            "item_name": item_name,
+            "description": item_data.get("description", item_name),
+            "qty": item_data.get("qty", 1),
+            "rate": item_data.get("rate", 0),
+            "uom": item_data.get("uom", "Nos"),
+            "delivery_date": data.get("delivery_date", frappe.utils.today()),
+        })
+
+    try:
+        doc.insert(ignore_permissions=True)
+        doc.save()
+        msg = f"✅ Draft Sales Order '{doc.name}' created from document!"
+        if auto_created_items:
+            msg += f"<br><small>Auto-created items: {', '.join(auto_created_items[:3])}{'...' if len(auto_created_items) > 3 else ''}</small>"
+        return {
+            "type": "success",
+            "message": msg,
+            "link": f"/app/sales-order/{doc.name}",
+            "doctype": "Sales Order",
+            "name": doc.name,
+            "auto_created_items": auto_created_items,
+        }
+    except Exception as e:
+        frappe.log_error(f"OCR SO creation error: {e}")
+        return {"type": "error", "message": f"Failed to create Sales Order: {str(e)[:100]}"}
+
+
+def create_purchase_order_from_ocr(data, supplier_name):
+    """Create Purchase Order from OCR-extracted data."""
+    supplier = get_or_create_supplier(supplier_name)
+    if not supplier:
+        return {"type": "error", "message": "Could not determine supplier for Purchase Order."}
+
+    auto_created_items = []
+    doc = frappe.new_doc("Purchase Order")
+    doc.supplier = supplier
+    doc.transaction_date = data.get("posting_date", frappe.utils.today())
+    doc.schedule_date = data.get("delivery_date", frappe.utils.today())
+
+    items = data.get("items", [])
+    for item_data in items:
+        item_name = item_data.get("item_name", "Item")
+        item_code = item_data.get("item_code") or item_name[:50]
+        actual_item_code = get_or_create_item(item_name, item_code)
+        if actual_item_code and actual_item_code not in auto_created_items:
+            auto_created_items.append(actual_item_code)
+
+        doc.append("items", {
+            "item_code": actual_item_code or item_code,
+            "item_name": item_name,
+            "description": item_data.get("description", item_name),
+            "qty": item_data.get("qty", 1),
+            "rate": item_data.get("rate", 0),
+            "uom": item_data.get("uom", "Nos"),
+            "schedule_date": data.get("delivery_date", frappe.utils.today()),
+        })
+
+    try:
+        doc.insert(ignore_permissions=True)
+        doc.save()
+        msg = f"✅ Draft Purchase Order '{doc.name}' created from document!"
+        if auto_created_items:
+            msg += f"<br><small>Auto-created items: {', '.join(auto_created_items[:3])}{'...' if len(auto_created_items) > 3 else ''}</small>"
+        return {
+            "type": "success",
+            "message": msg,
+            "link": f"/app/purchase-order/{doc.name}",
+            "doctype": "Purchase Order",
+            "name": doc.name,
+            "auto_created_items": auto_created_items,
+        }
+    except Exception as e:
+        frappe.log_error(f"OCR PO creation error: {e}")
+        return {"type": "error", "message": f"Failed to create Purchase Order: {str(e)[:100]}"}
+
+
 def create_generic_doc(doctype, data):
     """Create any document type generically."""
     cfg = get_create_config(doctype)
@@ -335,15 +548,29 @@ def create_generic_doc(doctype, data):
 
 def create_invoice_from_extracted(invoice_type, extracted_data):
     """
-    Create Sales or Purchase Invoice from OCR-extracted data.
-    invoice_type: "sales" or "purchase"
+    Create Sales Invoice, Purchase Invoice, Sales Order or Purchase Order from OCR-extracted data.
+    invoice_type: "sales_invoice", "purchase_invoice", "sales_order", "purchase_order"
+    Also handles legacy "sales" / "purchase" values for backwards compatibility.
     """
     party_name = extracted_data.get("party_name", "")
     
+    # Normalize legacy values
     if invoice_type == "sales":
+        invoice_type = "sales_invoice"
+    elif invoice_type == "purchase":
+        invoice_type = "purchase_invoice"
+    
+    if invoice_type == "sales_invoice":
         return create_sales_invoice_from_ocr(extracted_data, party_name)
-    else:
+    elif invoice_type == "purchase_invoice":
         return create_purchase_invoice_from_ocr(extracted_data, party_name)
+    elif invoice_type == "sales_order":
+        return create_sales_order_from_ocr(extracted_data, party_name)
+    elif invoice_type == "purchase_order":
+        return create_purchase_order_from_ocr(extracted_data, party_name)
+    else:
+        # Default fallback to sales invoice
+        return create_sales_invoice_from_ocr(extracted_data, party_name)
 
 
 def get_or_create_item(item_name, item_code=None):

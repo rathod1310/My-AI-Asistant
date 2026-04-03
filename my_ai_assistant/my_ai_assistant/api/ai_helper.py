@@ -72,6 +72,10 @@ Q: "List quotations" → {{"type": "list", "message": "Your quotations:", "items
 Q: "Revenue?" → {{"type": "text", "message": "Revenue: <b>₹50,000</b>"}}
 Q: "How many items in ACC-SINV-2026-00005?" → {{"type": "text", "message": "Sales Invoice ACC-SINV-2026-00005 has <b>3 items</b> with total amount <b>₹15,000</b>."}}
 Q: "How many items in PUR-ORD-2026-00003?" → {{"type": "text", "message": "Purchase Order PUR-ORD-2026-00003 has <b>5 items</b>."}}
+Q: "Create sales invoice for ABC Ltd" → {{"type": "create", "doctype": "Sales Invoice", "data": {{"customer": "ABC Ltd"}}}}
+Q: "Create purchase invoice from XYZ" → {{"type": "create", "doctype": "Purchase Invoice", "data": {{"supplier": "XYZ"}}}}
+Q: "Create sales order for ABC" → {{"type": "create", "doctype": "Sales Order", "data": {{"customer": "ABC"}}}}
+Q: "Create purchase order from XYZ" → {{"type": "create", "doctype": "Purchase Order", "data": {{"supplier": "XYZ"}}}}
 
 Return ONLY valid JSON."""
 
@@ -135,70 +139,110 @@ def parse_ai_response(ai_reply):
 
 
 def extract_context_from_history(conversation_history):
-    """Extract topics from conversation history."""
+    """Extract topics from conversation history (both user and assistant messages)."""
     previous_topics = []
     
     if not conversation_history:
         return previous_topics
     
+    # Topic keyword map
+    topic_keywords = {
+        "Customer":       ["customer", "client", "buyer", "customers", "clients"],
+        "Supplier":       ["supplier", "vendor", "suppliers", "vendors"],
+        "Sales Invoice":  ["sales invoice", "sinv", "invoice", "revenue", "billing", "receivable"],
+        "Purchase Invoice": ["purchase invoice", "pinv", "purchase bill", "payable", "expense"],
+        "Sales Order":    ["sales order", "so-"],
+        "Purchase Order": ["purchase order", "po-"],
+        "Item":           ["item", "product", "stock", "inventory", "items", "products"],
+        "Employee":       ["employee", "staff", "salary", "payroll", "hr", "employees"],
+        "Payment Entry":  ["payment", "receipt", "collection", "payments"],
+        "Quotation":      ["quotation", "quote", "quotations"],
+        "Lead":           ["lead", "prospect", "leads"],
+    }
+    
     try:
         history = json.loads(conversation_history) if isinstance(conversation_history, str) else conversation_history
         if isinstance(history, list):
-            for msg in reversed(history[-4:]):
-                if isinstance(msg, dict) and msg.get("role") == "assistant":
-                    content = msg.get("content", "").lower()
-                    if any(w in content for w in ["customer", "client", "buyer"]):
-                        previous_topics.append("Customer")
-                    if any(w in content for w in ["supplier", "vendor"]):
-                        previous_topics.append("Supplier")
-                    if any(w in content for w in ["invoice", "revenue", "billing", "sale"]):
-                        previous_topics.append("Sales Invoice")
-                    if any(w in content for w in ["purchase", "payable", "expense"]):
-                        previous_topics.append("Purchase Invoice")
-                    if any(w in content for w in ["item", "product", "stock"]):
-                        previous_topics.append("Item")
-                    if any(w in content for w in ["employee", "staff", "salary", "payroll"]):
-                        previous_topics.append("Employee")
-                    if any(w in content for w in ["payment", "receipt", "collection"]):
-                        previous_topics.append("Payment Entry")
+            # Read both user and assistant messages for context
+            for msg in reversed(history[-6:]):
+                if not isinstance(msg, dict):
+                    continue
+                text = msg.get("content", "").lower()
+                for topic, keywords in topic_keywords.items():
+                    if any(kw in text for kw in keywords):
+                        if topic not in previous_topics:
+                            previous_topics.append(topic)
     except:
         pass
     
     return previous_topics
-
-
 def expand_vague_question(question, previous_topics):
     """Expand vague follow-up questions using context."""
     q_lower = question.lower().strip()
     
     # Pattern detection for vague questions
     vague_patterns = [
-        (r"^(what about|show me|tell me about|and|what about)\s+(supplier|vendors?)", "Supplier"),
-        (r"^(what about|show me|tell me about|and|what about)\s+(customer|clients?|buyers?)", "Customer"),
-        (r"^(what about|show me|tell me about|and|what about)\s+(invoices?|sales|revenue)", "Sales Invoice"),
-        (r"^(what about|show me|tell me about|and|what about)\s+(purchase|payable|expenses?)", "Purchase Invoice"),
-        (r"^(what about|show me|tell me about|and|what about)\s+(items?|products?|stock|inventory)", "Item"),
-        (r"^(what about|show me|tell me about|and|what about)\s+(employees?|staff|team)", "Employee"),
-        (r"^(what about|show me|tell me about|and|what about)\s+(payments?|receipts?|collection)", "Payment Entry"),
-        (r"^(what else|anything else|more|other|what next|next|then)", "CONTINUE"),
-        (r"^(all|show all|list all|everything|complete list)", "ALL"),
-        (r"^(yes|ok|okay|sure|now|go ahead|continue)", "CONTINUE"),
+        # Supplier patterns
+        (r"(what about|show me|tell me about|and|now|supplier|vendors?|vendor)", "Supplier"),
+        # Customer patterns
+        (r"(what about|show me|tell me about|and|now|customer|clients?|buyers?)", "Customer"),
+        # Sales Invoice patterns
+        (r"(what about|show me|tell me about|and|now|sales invoice|sinv|invoices?)", "Sales Invoice"),
+        # Purchase Invoice patterns
+        (r"(what about|show me|tell me about|and|now|purchase invoice|pinv|purchase bill)", "Purchase Invoice"),
+        # Sales Order patterns
+        (r"(what about|show me|tell me about|and|now|sales order|so-)", "Sales Order"),
+        # Purchase Order patterns
+        (r"(what about|show me|tell me about|and|now|purchase order|po-)", "Purchase Order"),
+        # Item patterns
+        (r"(what about|show me|tell me about|and|now|items?|products?|stock|inventory)", "Item"),
+        # Employee patterns
+        (r"(what about|show me|tell me about|and|now|employees?|staff|team|hr)", "Employee"),
+        # Payment patterns
+        (r"(what about|show me|tell me about|and|now|payments?|receipts?|collection)", "Payment Entry"),
+        # Quotation patterns
+        (r"(what about|show me|tell me about|and|now|quotations?|quotes?)", "Quotation"),
     ]
     
-    for pattern, topic_hint in vague_patterns:
-        if re.search(pattern, q_lower):
-            if topic_hint == "CONTINUE" and previous_topics:
-                return f"Tell me about {previous_topics[-1]}s", True
-            elif topic_hint == "ALL":
-                return "Show all business summary", True
-            else:
-                return f"Tell me about {topic_hint}s", True
+    # First try exact keyword match for "what about X" type questions
+    intro_pattern = r"^(what about|show|tell me about|and what about|now show|now tell)\s+(.+)"
+    m = re.search(intro_pattern, q_lower)
+    if m:
+        topic_part = m.group(2).strip()
+        topic_map = {
+            "supplier": "Supplier", "suppliers": "Supplier", "vendor": "Supplier", "vendors": "Supplier",
+            "customer": "Customer", "customers": "Customer", "client": "Customer", "clients": "Customer",
+            "invoice": "Sales Invoice", "invoices": "Sales Invoice", "sales invoice": "Sales Invoice",
+            "purchase invoice": "Purchase Invoice", "purchase bill": "Purchase Invoice",
+            "sales order": "Sales Order", "order": "Sales Order",
+            "purchase order": "Purchase Order",
+            "item": "Item", "items": "Item", "product": "Item", "products": "Item", "stock": "Item",
+            "employee": "Employee", "employees": "Employee", "staff": "Employee",
+            "payment": "Payment Entry", "payments": "Payment Entry",
+            "quotation": "Quotation", "quote": "Quotation", "quotations": "Quotation",
+            "lead": "Lead", "leads": "Lead",
+        }
+        for kw, dt in topic_map.items():
+            if kw in topic_part:
+                return f"Show all {dt}s", True
     
-    # Very short questions with context
-    if len(question.split()) <= 3 and previous_topics:
-        simple_refs = ["they", "them", "those", "that", "it", "these", "ones", 
-                      "list", "details", "info", "more", "next"]
-        if any(q_lower == ref for ref in simple_refs) or len(q_lower) <= 6:
+    # Continue / summarize patterns
+    continue_patterns = [r"^(what else|anything else|more|other|what next|next|then|continue|go ahead)$"]
+    for pattern in continue_patterns:
+        if re.search(pattern, q_lower):
+            if previous_topics:
+                return f"Tell me about {previous_topics[-1]}s", True
+            return "Show all business summary", True
+    
+    # "All / everything" patterns
+    if re.search(r"^(all|show all|list all|everything|complete list|full list)$", q_lower):
+        return "Show all business summary", True
+    
+    # Single-word or very short with context
+    if len(question.split()) <= 2 and previous_topics:
+        simple_refs = ["they", "them", "those", "that", "it", "these", "ones",
+                       "list", "details", "info", "more", "next", "show", "yes", "ok", "okay"]
+        if q_lower in simple_refs or len(q_lower) <= 5:
             return f"Tell me about {previous_topics[-1]}s", True
     
     return question, False
@@ -417,14 +461,16 @@ Answer based ONLY on the live data above. If data is empty, say so clearly."""
 @frappe.whitelist()
 def scan_bill_image(image_data, invoice_type="auto"):
     """
-    OCR endpoint for bill/invoice scanning.
+    OCR endpoint for bill/invoice/order scanning.
+    invoice_type: "auto", "sales", "purchase", "sales_order", "purchase_order"
+    Supports image files (jpeg, png, webp, gif) and PDF files.
     """
     api_key = get_api_key()
     if not api_key:
         return {"type": "error", "message": "API key not configured."}
     
     try:
-        # Parse image data
+        # Parse image/pdf data
         if "," in image_data:
             mime_part, b64_part = image_data.split(",", 1)
             mime_type = mime_part.split(":")[1].split(";")[0] if ":" in mime_part else "image/jpeg"
@@ -432,30 +478,53 @@ def scan_bill_image(image_data, invoice_type="auto"):
             b64_part = image_data
             mime_type = "image/jpeg"
         
-        # OCR prompt
-        extraction_prompt = """You are an expert bill/invoice OCR system for SkyERP.
-Extract ALL information from this bill image and return ONLY valid JSON.
+        # Validate supported MIME types
+        supported_mime = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "application/pdf"]
+        if mime_type not in supported_mime:
+            # Try to treat unknown as jpeg
+            mime_type = "image/jpeg"
+        
+        # OCR prompt - supports all document types
+        extraction_prompt = """You are an expert OCR system for SkyERP ERP.
+Extract ALL information from this document (bill/invoice/order) and return ONLY valid JSON.
 
 Return this exact JSON structure:
-{"invoice_type": "sales" or "purchase", "party_name": "customer/supplier name", 
-"invoice_number": "bill number", "posting_date": "YYYY-MM-DD", 
-"due_date": "YYYY-MM-DD or null", "gstin": "GST or null", 
-"items": [{"item_name": "product", "description": "desc", "qty": 1, "rate": 0.00, "uom": "Nos", "amount": 0.00}], 
-"taxes": [{"tax_type": "CGST/SGST/IGST", "description": "e.g. CGST 9%", "amount": 0.00}], 
+{"document_type": "sales_invoice" or "purchase_invoice" or "sales_order" or "purchase_order",
+"party_name": "customer or supplier name",
+"invoice_number": "document number or null",
+"posting_date": "YYYY-MM-DD or null",
+"due_date": "YYYY-MM-DD or null",
+"delivery_date": "YYYY-MM-DD or null",
+"gstin": "GST number or null",
+"items": [{"item_name": "product name", "description": "description", "qty": 1, "rate": 0.00, "uom": "Nos", "amount": 0.00}],
+"taxes": [{"tax_type": "CGST/SGST/IGST/VAT", "description": "e.g. CGST 9%", "amount": 0.00}],
 "subtotal": 0.00, "tax_total": 0.00, "grand_total": 0.00, "currency": "INR"}
 
 Rules:
-- Extract EVERY line item
-- Use YYYY-MM-DD format for dates
-- Use null for missing fields
-- Return ONLY valid JSON, no other text"""
+- document_type: use "sales_invoice" for invoices/bills where YOU are the seller; "purchase_invoice" for bills from suppliers; "sales_order" for customer orders; "purchase_order" for supplier orders
+- Extract EVERY line item with correct qty, rate, amount
+- Use YYYY-MM-DD format for all dates
+- Use null for missing fields (not empty string)
+- Return ONLY valid JSON, absolutely no other text or markdown"""
+        
+        # Build Gemini request parts - handle both images and PDFs
+        if mime_type == "application/pdf":
+            parts = [
+                {"inline_data": {"mime_type": "application/pdf", "data": b64_part}},
+                {"text": extraction_prompt}
+            ]
+        else:
+            parts = [
+                {"inline_data": {"mime_type": mime_type, "data": b64_part}},
+                {"text": extraction_prompt}
+            ]
         
         # Call Gemini Vision
         response = requests.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}",
             headers={"content-type": "application/json"},
             json={
-                "contents": [{"parts": [{"inline_data": {"mime_type": mime_type, "data": b64_part}}, {"text": extraction_prompt}]}],
+                "contents": [{"parts": parts}],
                 "generationConfig": {"maxOutputTokens": 2048, "temperature": 0.1},
             },
             timeout=90,
@@ -491,13 +560,36 @@ Rules:
                 pass
         
         if not extracted:
-            return {"type": "error", "message": "Could not read bill data. Please try a clearer photo."}
+            return {"type": "error", "message": "Could not read document data. Please try a clearer photo or PDF."}
         
-        # Determine invoice type
-        detected = (extracted.get("invoice_type") or "").lower()
-        final_type = detected if invoice_type == "auto" and detected in ["sales", "purchase"] else ("sales" if invoice_type not in ["sales", "purchase"] else invoice_type)
+        # Normalize invoice_type from user selection
+        # invoice_type from frontend: "auto", "sales", "purchase", "sales_order", "purchase_order"
+        # document_type from AI: "sales_invoice", "purchase_invoice", "sales_order", "purchase_order"
         
-        # Create invoice from extracted data
+        # Map user-selected type to final type
+        user_type_map = {
+            "sales": "sales_invoice",
+            "purchase": "purchase_invoice",
+            "sales_order": "sales_order",
+            "purchase_order": "purchase_order",
+        }
+        
+        if invoice_type != "auto" and invoice_type in user_type_map:
+            # User explicitly selected a type - use it
+            final_type = user_type_map[invoice_type]
+        else:
+            # Auto-detect from AI response
+            detected = (extracted.get("document_type") or extracted.get("invoice_type") or "").lower()
+            # Normalize old format "sales"/"purchase" from AI
+            if detected == "sales":
+                detected = "sales_invoice"
+            elif detected == "purchase":
+                detected = "purchase_invoice"
+            
+            valid_types = ["sales_invoice", "purchase_invoice", "sales_order", "purchase_order"]
+            final_type = detected if detected in valid_types else "sales_invoice"
+        
+        # Create document from extracted data
         from .document_processor import create_invoice_from_extracted
         return create_invoice_from_extracted(final_type, extracted)
     
@@ -505,4 +597,4 @@ Rules:
         return {"type": "error", "message": "❌ Cannot connect to internet."}
     except Exception as e:
         frappe.log_error(f"scan_bill_image error: {e}")
-        return {"type": "error", "message": f"Error scanning bill: {str(e)[:200]}"}
+        return {"type": "error", "message": f"Error scanning document: {str(e)[:200]}"}
